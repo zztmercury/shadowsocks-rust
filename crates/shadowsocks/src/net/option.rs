@@ -53,6 +53,9 @@ pub struct ConnectOpts {
 
     /// TCP options
     pub tcp: TcpSocketOpts,
+
+    pub auth_uname: Option<String>,
+    pub auth_passwd: Option<String>,
 }
 
 impl Default for ConnectOpts {
@@ -66,6 +69,8 @@ impl Default for ConnectOpts {
             #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios"))]
             bind_interface: None,
             tcp: TcpSocketOpts::default(),
+            auth_uname: None,
+            auth_passwd: None
         }
     }
 }

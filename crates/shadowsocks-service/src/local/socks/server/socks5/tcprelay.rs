@@ -18,6 +18,10 @@ use shadowsocks::{
         Reply,
         TcpRequestHeader,
         TcpResponseHeader,
+        PasswordAuthRequest,
+        PasswordAuthResponse,
+        SOCKS_AUTH_METHOD_PASSWORD_STATUS_SUCCESS,
+        SOCKS_AUTH_METHOD_PASSWORD_STATUS_FAIL,
     },
     ServerAddr,
 };
@@ -65,7 +69,48 @@ impl Socks5TcpHandler {
 
         trace!("socks5 {:?}", handshake_req);
 
-        if !handshake_req.methods.contains(&socks5::SOCKS5_AUTH_METHOD_NONE) {
+        // if !handshake_req.methods.contains(&socks5::SOCKS5_AUTH_METHOD_NONE) {
+        //     use std::io::Error;
+        //
+        //     let resp = HandshakeResponse::new(socks5::SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE);
+        //     resp.write_to(&mut stream).await?;
+        //
+        //     return Err(Error::new(
+        //         ErrorKind::Other,
+        //         "currently shadowsocks-rust does not support authentication",
+        //     ));
+        // } else {
+        //     // Reply to client
+        //     let resp = HandshakeResponse::new(socks5::SOCKS5_AUTH_METHOD_NONE);
+        //     trace!("reply handshake {:?}", resp);
+        //     resp.write_to(&mut stream).await?;
+        // }
+
+        // 1. Handshake
+        let connect_opts = self.context.connect_opts_ref();
+        if handshake_req.methods.contains(&socks5::SOCKS5_AUTH_METHOD_PASSWORD) && connect_opts.auth_uname.is_some() {
+            let resp = HandshakeResponse::new(socks5::SOCKS5_AUTH_METHOD_PASSWORD);
+
+            resp.write_to(&mut stream).await?;
+
+            let password_auth_req = PasswordAuthRequest::read_from(&mut stream).await?;
+
+            if password_auth_req.uname.eq(connect_opts.auth_uname.as_ref().unwrap()) && password_auth_req.passwd.eq(connect_opts.auth_passwd.as_ref().unwrap()) {
+                let resp = PasswordAuthResponse::new(SOCKS_AUTH_METHOD_PASSWORD_STATUS_SUCCESS);
+
+                resp.write_to(&mut stream).await?;
+            } else {
+                let resp = PasswordAuthResponse::new(SOCKS_AUTH_METHOD_PASSWORD_STATUS_FAIL);
+
+                resp.write_to(&mut stream).await?;
+
+                use std::io::Error;
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "username or password not match",
+                ));
+            };
+        } else {
             use std::io::Error;
 
             let resp = HandshakeResponse::new(socks5::SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE);
@@ -73,13 +118,8 @@ impl Socks5TcpHandler {
 
             return Err(Error::new(
                 ErrorKind::Other,
-                "currently shadowsocks-rust does not support authentication",
+                "this shadowsocks-rust must use password authentication",
             ));
-        } else {
-            // Reply to client
-            let resp = HandshakeResponse::new(socks5::SOCKS5_AUTH_METHOD_NONE);
-            trace!("reply handshake {:?}", resp);
-            resp.write_to(&mut stream).await?;
         }
 
         // 2. Fetch headers

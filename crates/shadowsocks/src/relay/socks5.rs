@@ -21,7 +21,10 @@ pub use self::consts::{
     SOCKS5_AUTH_METHOD_NONE,
     SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE,
     SOCKS5_AUTH_METHOD_PASSWORD,
+    SOCKS_AUTH_METHOD_PASSWORD_STATUS_SUCCESS,
+    SOCKS_AUTH_METHOD_PASSWORD_STATUS_FAIL,
 };
+use crate::relay::socks5::consts::SOCKS_AUTH_METHOD_PASSWORD_VERSION;
 
 #[rustfmt::skip]
 mod consts {
@@ -49,6 +52,10 @@ mod consts {
     pub const SOCKS5_REPLY_TTL_EXPIRED:                u8 = 0x06;
     pub const SOCKS5_REPLY_COMMAND_NOT_SUPPORTED:      u8 = 0x07;
     pub const SOCKS5_REPLY_ADDRESS_TYPE_NOT_SUPPORTED: u8 = 0x08;
+
+    pub const SOCKS_AUTH_METHOD_PASSWORD_VERSION:      u8 = 0x01;
+    pub const SOCKS_AUTH_METHOD_PASSWORD_STATUS_SUCCESS: u8 = 0x00;
+    pub const SOCKS_AUTH_METHOD_PASSWORD_STATUS_FAIL: u8 = 0xFF;
 }
 
 /// SOCKS5 command
@@ -722,6 +729,107 @@ impl HandshakeResponse {
     }
 
     /// Length in bytes
+    pub fn serialized_len(self) -> usize {
+        2
+    }
+}
+
+
+/// socks5 password auth request packet
+/// ```plain
+/// +----+------+----------+------+----------+
+/// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+/// +----+------+----------+------+----------+
+/// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+/// +----+------+----------+------+----------+
+/// ```
+pub struct PasswordAuthRequest {
+    pub uname: String,
+    pub passwd: String,
+}
+
+impl PasswordAuthRequest {
+    pub fn new(uname: String, passwd: String) -> PasswordAuthRequest {
+        PasswordAuthRequest{uname, passwd}
+    }
+
+    pub async fn read_from<R>(r: &mut R) -> io::Result<PasswordAuthRequest>
+        where
+            R: AsyncRead + Unpin,
+    {
+        let mut buf = [0u8; 2];
+        let _ = r.read_exact(&mut buf).await?;
+        let ver = buf[0];
+        let u_len = buf[1] as usize;
+        if ver != consts::SOCKS_AUTH_METHOD_PASSWORD_VERSION {
+            use std::io::{Error};
+            let err = Error::new(ErrorKind::InvalidData, format!("unsupported socks password auth version {:#x}", ver));
+            return Err(err)
+        }
+
+        let mut uname_bytes = BytesMut::with_capacity(u_len);
+        uname_bytes.resize(u_len, 0);
+        let _ = r.read_exact(&mut uname_bytes).await?;
+
+        let uname = match String::from_utf8(uname_bytes.to_vec()) {
+            Ok(uname) => uname,
+            Err(..) => {
+                use std::io::{Error};
+                return Err(Error::new(ErrorKind::InvalidData, "invalid uname encoding"))
+            },
+        };
+
+        let mut buf = [0u8; 1];
+        let _ = r.read_exact(&mut buf).await?;
+        let p_len = buf[0] as usize;
+
+        let mut buf = BytesMut::with_capacity(p_len);
+        buf.resize(p_len, 0);
+        let _ = r.read_exact(&mut buf).await?;
+
+        let passwd = match String::from_utf8(buf.to_vec()) {
+            Ok(addr) => addr,
+            Err(..) => {
+                use std::io::{Error};
+                return Err(Error::new(ErrorKind::InvalidData, "invalid passwd encoding"))
+            },
+        };
+
+        Ok(PasswordAuthRequest{uname, passwd})
+    }
+}
+
+/// socks5 password auth response packet
+/// ```plain
+/// +----+--------+
+/// |VER | STATUS |
+/// +----+--------+
+/// | 1  |   1    |
+/// +----+--------+
+/// ```
+#[derive(Clone, Debug, Copy)]
+pub struct PasswordAuthResponse {
+    pub status: u8
+}
+
+impl PasswordAuthResponse {
+    pub fn new(status: u8) -> PasswordAuthResponse{
+        PasswordAuthResponse{status}
+    }
+
+    pub async fn write_to<W>(self, w: &mut W) -> io::Result<()>
+        where
+            W: AsyncWrite + Unpin,
+    {
+        let mut buf = BytesMut::with_capacity(self.serialized_len());
+        self.write_to_buf(&mut buf);
+        w.write_all(&buf).await
+    }
+
+    pub fn write_to_buf<B: BufMut>(self, buf: &mut B) {
+        buf.put_slice(&[SOCKS_AUTH_METHOD_PASSWORD_VERSION,self.status])
+    }
+
     pub fn serialized_len(self) -> usize {
         2
     }

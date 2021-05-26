@@ -806,6 +806,9 @@ pub struct Config {
     /// Flow statistic report Unix socket path (only for Android)
     #[cfg(feature = "local-flow-stat")]
     pub stat_path: Option<PathBuf>,
+
+    pub auth_uname: Option<String>,
+    pub auth_passwd: Option<String>
 }
 
 /// Configuration parsing error kind
@@ -906,6 +909,8 @@ impl Config {
 
             #[cfg(feature = "local-flow-stat")]
             stat_path: None,
+            auth_uname: None,
+            auth_passwd: None
         }
     }
 

@@ -75,6 +75,8 @@ fn main() {
             (@arg INBOUND_RECV_BUFFER_SIZE: --("inbound-recv-buffer-size") +takes_value {validator::validate_u32} "Set inbound sockets' SO_RCVBUF option")
             (@arg OUTBOUND_SEND_BUFFER_SIZE: --("outbound-send-buffer-size") +takes_value {validator::validate_u32} "Set outbound sockets' SO_SNDBUF option")
             (@arg OUTBOUND_RECV_BUFFER_SIZE: --("outbound-recv-buffer-size") +takes_value {validator::validate_u32} "Set outbound sockets' SO_RCVBUF option")
+            (@arg AUTH_UNAME: --("auth-uname") +takes_value requires[AUTH_PASSWD] "socks5 password auth username")
+            (@arg AUTH_PASSWD: --("auth-passwd") +takes_value requires[AUTH_UNAME] "socks5 password auth password")
         );
 
         // FIXME: -6 is not a identifier, so we cannot build it with clap_app!
@@ -235,6 +237,13 @@ fn main() {
             }
 
             config.server.push(sc);
+        }
+
+        if let Some(auth_uname) = matches.value_of("AUTH_UNAME") {
+            config.auth_uname = Some(auth_uname.to_string());
+        }
+        if let Some(auth_passwd) = matches.value_of("AUTH_PASSWD") {
+            config.auth_passwd = Some(auth_passwd.to_string());
         }
 
         if let Some(url) = matches.value_of("URL") {
